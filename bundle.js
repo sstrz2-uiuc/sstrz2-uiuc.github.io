@@ -8683,7 +8683,8 @@
       viewMode: 'popularity', 
       highlightedDish: null,
       filterKeyword: '',
-      showAllScenes: false
+      showAllScenes: false,
+      isUpdating: false // Add flag to prevent multiple simultaneous updates
   };
 
   const scenes = [
@@ -8920,7 +8921,18 @@
   }
 
   function updateScene(sceneIndex) {
-      if (sceneIndex < 0 || sceneIndex >= scenes.length) return;
+      if (appState.isUpdating) return; // Prevent multiple simultaneous updates
+      
+      if (sceneIndex < 0 || sceneIndex >= scenes.length) {
+          appState.isUpdating = false;
+          return;
+      }
+      
+      appState.isUpdating = true;
+      
+      // Disable navigation buttons during update
+      document.getElementById("prev-btn").disabled = true;
+      document.getElementById("next-btn").disabled = true;
       
       const previousScene = appState.currentScene;
       appState.currentScene = sceneIndex;
@@ -8928,30 +8940,44 @@
       
       document.getElementById("scene-indicator").textContent = `Scene ${sceneIndex + 1} of ${scenes.length}`;
       
-      document.getElementById("prev-btn").disabled = sceneIndex === 0;
-      document.getElementById("next-btn").disabled = sceneIndex === scenes.length - 1;
-      
       if (previousScene !== sceneIndex && previousScene >= 0) {
           showSceneTransition(previousScene, sceneIndex);
       }
       
-      g.selectAll("*")
-          .transition()
-          .duration(400)
-          .style("opacity", 0)
-          .remove()
-          .end()
-          .then(() => {
+      // Interrupt any ongoing transitions and clear all elements
+      g.selectAll("*").interrupt();
+      g.selectAll("*").remove();
+      
+      // Use a small delay to ensure clean state before rendering
+      setTimeout(() => {
+          try {
               renderBeveragePopularityChart(scene);
               showSceneInsights(scene);
               
+              // Apply entrance animation to new elements
               g.selectAll(".beverage-group, .legend, .annotation-group")
                   .style("opacity", 0)
                   .transition()
                   .duration(600)
                   .delay(200)
                   .style("opacity", 1);
-          });
+              
+              // Reset the updating flag after all animations should be complete
+              setTimeout(() => {
+                  appState.isUpdating = false;
+                  // Re-enable navigation buttons with proper state
+                  document.getElementById("prev-btn").disabled = appState.currentScene === 0;
+                  document.getElementById("next-btn").disabled = appState.currentScene === scenes.length - 1;
+              }, 800); // 600ms animation + 200ms delay + buffer
+              
+          } catch (error) {
+              console.error('Error updating scene:', error);
+              appState.isUpdating = false;
+              // Re-enable navigation buttons with proper state even on error
+              document.getElementById("prev-btn").disabled = appState.currentScene === 0;
+              document.getElementById("next-btn").disabled = appState.currentScene === scenes.length - 1;
+          }
+      }, 50);
   }
 
   function showSceneTransition(fromIndex, toIndex) {
@@ -9327,6 +9353,10 @@
       });
       
       select$1("#show-all-scenes").on("change", function() {
+          if (appState.isUpdating) {
+              this.checked = !this.checked; // Revert checkbox state
+              return;
+          }
           appState.showAllScenes = this.checked;
           appState.highlightedDish = null;
           updateScene(appState.currentScene);
@@ -9464,6 +9494,7 @@
           .attr("class", "view-mode-button")
           .style("cursor", "pointer")
           .on("click", function() {
+              if (appState.isUpdating) return;
               appState.viewMode = "popularity";
               updateScene(appState.currentScene);
           })
@@ -9510,6 +9541,7 @@
           .attr("transform", "translate(90, 0)")
           .style("cursor", "pointer")
           .on("click", function() {
+              if (appState.isUpdating) return;
               appState.viewMode = "price";
               updateScene(appState.currentScene);
           })
@@ -9553,12 +9585,20 @@
   }
 
   document.getElementById("next-btn").addEventListener("click", function() {
+      if (appState.isUpdating) {
+          console.log('Scene update in progress, please wait...');
+          return;
+      }
       if (appState.currentScene < scenes.length - 1) {
           updateScene(appState.currentScene + 1);
       }
   });
 
   document.getElementById("prev-btn").addEventListener("click", function() {
+      if (appState.isUpdating) {
+          console.log('Scene update in progress, please wait...');
+          return;
+      }
       if (appState.currentScene > 0) {
           updateScene(appState.currentScene - 1);
       }
